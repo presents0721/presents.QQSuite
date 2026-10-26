@@ -1,0 +1,327 @@
+@namespace QQSuite.Core
+@using System
+@using System.Linq
+@using System.Threading.Tasks
+@using Alife.Framework
+@using Alife.Client.Components.Shared.Modules
+@using Alife.Client.Components.Shared.Common
+@inherits ModuleUIBase<QQSuiteControlModule, QQSuiteConfig>
+
+@if (Module == null)
+{
+    <div class="qqs qqs-idle">
+        <style>
+            .qqs-idle { --line: #e6e9f0; display: flex; flex-direction: column; gap: 14px; color: #1f2430; }
+            .qqs-idle-card { border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%); }
+            .qqs-idle-card h3 { margin: 0 0 6px; font-size: 16px; }
+            .qqs-idle-card p { margin: 0; font-size: 12px; line-height: 1.8; color: #596074; }
+            .qqs-idle-steps { margin: 14px 0 0; padding-left: 18px; font-size: 12px; line-height: 2; color: #4b5468; }
+            .qqs-idle-steps b { color: #1677ff; }
+            .qqs-idle-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+            .qqs-idle-list span { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #f2f4f8; border: 1px solid #e8ebf1; color: #4b5468; }
+            .qqs-idle-list span.on { background: #e8f2ff; border-color: #bfd8ff; color: #1677ff; font-weight: 600; }
+        </style>
+
+        <div class="qqs-idle-card">
+            <h3>面板还没拿到运行中的模块</h3>
+            <p>
+                这个面板要操作真实运行的功能，所以需要「模块已启用」且「角色已激活」。
+                当前 @(Character == null ? "没有角色上下文" : $"角色「{Character.Name}」")
+            </p>
+            <ol class="qqs-idle-steps">
+                <li>左侧「<b>角色设定</b>」→「功能 (Modules)」，只勾选 <b>QQ 全能套件</b>（所有功能已经并进这一个入口，不用再单独勾）。</li>
+                <li>保存后点右上角「<b>激活角色</b>」。待机状态下角色没有运行实例，面板拿不到模块。</li>
+                <li>回到「功能检视」，在面板里逐项开关功能、填写连接地址。</li>
+            </ol>
+            <div class="qqs-idle-list">
+                @foreach (QQSuiteFeature feature in QQSuiteControlModule.Features)
+                {
+                    <span>@feature.Name</span>
+                }
+            </div>
+        </div>
+    </div>
+    return;
+}
+
+<div class="qqs">
+    <style>
+        .qqs { --qqs-bg: #f7f8fb; --qqs-card: #ffffff; --qqs-line: #e6e9f0; --qqs-text: #1f2430; --qqs-sub: #7a8194; --qqs-accent: #1677ff; display: flex; flex-direction: column; gap: 16px; color: var(--qqs-text); }
+        .qqs * { box-sizing: border-box; }
+        .qqs-hero { position: relative; overflow: hidden; border-radius: 18px; padding: 22px 24px; color: #fff; background: radial-gradient(120% 160% at 0% 0%, #2f7cf6 0%, #1e5fd6 46%, #123a8c 100%); box-shadow: 0 10px 30px rgba(22, 93, 214, .25); }
+        .qqs-hero::after { content: ""; position: absolute; width: 260px; height: 260px; right: -90px; top: -120px; border-radius: 50%; background: rgba(255, 255, 255, .14); }
+        .qqs-hero::before { content: ""; position: absolute; width: 180px; height: 180px; right: 70px; bottom: -130px; border-radius: 50%; background: rgba(255, 255, 255, .08); }
+        .qqs-hero-main { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .qqs-kicker { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; opacity: .72; margin-bottom: 6px; }
+        .qqs-hero h2 { margin: 0 0 6px; font-size: 26px; line-height: 1.2; font-weight: 700; letter-spacing: .02em; }
+        .qqs-hero p { margin: 0; opacity: .82; font-size: 13px; }
+        .qqs-hero-side { display: flex; align-items: center; gap: 14px; background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .22); padding: 10px 14px; border-radius: 14px; backdrop-filter: blur(6px); }
+        .qqs-stat { display: flex; flex-direction: column; gap: 2px; }
+        .qqs-stat b { font-size: 18px; line-height: 1; }
+        .qqs-stat span { font-size: 11px; opacity: .72; }
+        .qqs-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .26); }
+        .qqs-dot { width: 7px; height: 7px; border-radius: 50%; background: #ffb020; box-shadow: 0 0 0 3px rgba(255, 176, 32, .18); }
+        .qqs-pill.ok .qqs-dot { background: #3ddb8f; box-shadow: 0 0 0 3px rgba(61, 219, 143, .2); }
+
+        .qqs-master { display: flex; align-items: center; gap: 10px; font-size: 12px; opacity: .9; }
+        .qqs-switch { position: relative; width: 46px; height: 26px; border-radius: 999px; border: 0; background: rgba(255, 255, 255, .28); cursor: pointer; transition: background .2s ease; flex: 0 0 auto; padding: 0; }
+        .qqs-switch span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s ease; box-shadow: 0 2px 6px rgba(0, 0, 0, .18); }
+        .qqs-switch.on { background: #3ddb8f; }
+        .qqs-switch.on span { transform: translateX(20px); }
+        .qqs-switch.partial { background: #f0b44c; }
+        .qqs-switch.partial span { transform: translateX(10px); }
+        .qqs-switch:disabled { opacity: .5; cursor: not-allowed; }
+
+        .qqs-alert { display: flex; gap: 12px; align-items: center; border-radius: 12px; padding: 10px 14px; font-size: 13px; border: 1px solid #ffe2b8; background: #fff8eb; color: #8a5a00; }
+        .qqs-alert.error { border-color: #ffc9c9; background: #fff1f1; color: #a8071a; }
+        .qqs-alert-text { flex: 1; line-height: 1.65; }
+        .qqs-alert .qqs-btn { background: #a8071a; }
+
+        .qqs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 14px; }
+        .qqs-card { position: relative; background: var(--qqs-card); border: 1px solid var(--qqs-line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+        .qqs-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(31, 36, 48, .08); }
+        .qqs-card.on { border-color: color-mix(in srgb, var(--accent) 45%, #e6e9f0); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+        .qqs-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; border-radius: 16px 16px 0 0; background: var(--accent); opacity: .18; }
+        .qqs-card.on::before { opacity: .9; }
+        .qqs-card-head { display: flex; align-items: center; gap: 10px; }
+        .qqs-badge { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #fff); border: 1px solid color-mix(in srgb, var(--accent) 22%, #fff); flex: 0 0 auto; }
+        .qqs-titlebox { flex: 1; min-width: 0; }
+        .qqs-title { font-size: 14px; font-weight: 700; letter-spacing: .01em; }
+        .qqs-meta { font-size: 11px; color: var(--qqs-sub); margin-top: 1px; }
+        .qqs-desc { margin: 0; font-size: 12px; line-height: 1.65; color: #596074; min-height: 40px; }
+        .qqs-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .qqs-tags span { font-size: 11px; padding: 3px 8px; border-radius: 999px; color: #4b5468; background: #f2f4f8; border: 1px solid #e8ebf1; }
+        .qqs-card.on .qqs-tags span { color: color-mix(in srgb, var(--accent) 72%, #1f2430); background: color-mix(in srgb, var(--accent) 8%, #fff); border-color: color-mix(in srgb, var(--accent) 18%, #fff); }
+        .qqs-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+        .qqs-link { border: 0; background: transparent; padding: 0; font-size: 11px; color: var(--accent); cursor: pointer; font-weight: 600; white-space: nowrap; }
+        .qqs-link:hover { text-decoration: underline; }
+        .qqs-detail { border-top: 1px dashed #eceff5; padding-top: 12px; margin-top: 2px; display: flex; flex-direction: column; gap: 10px; }
+        .qqs-card-state { font-size: 11px; color: var(--qqs-sub); }
+        .qqs-card.on .qqs-card-state { color: var(--accent); font-weight: 600; }
+        .qqs-card .qqs-switch { background: #dfe3eb; }
+        .qqs-card .qqs-switch.on { background: var(--accent); }
+
+        .qqs-conn { background: var(--qqs-card); border: 1px solid var(--qqs-line); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+        .qqs-conn-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+        .qqs-conn-head h3 { margin: 0; font-size: 15px; }
+        .qqs-conn-head span { font-size: 12px; color: var(--qqs-sub); }
+        .qqs-form { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+        .qqs-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        .qqs-field label { font-size: 11px; color: var(--qqs-sub); }
+        .qqs-input { width: 100%; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid #d9dee8; background: #fbfcfe; color: var(--qqs-text); font-size: 12px; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+        .qqs-input:focus { border-color: #6aa1ff; box-shadow: 0 0 0 3px rgba(22, 119, 255, .12); background: #fff; }
+        .qqs-btn { height: 34px; padding: 0 16px; border-radius: 9px; border: 0; background: #1677ff; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: filter .15s ease; white-space: nowrap; }
+        .qqs-btn:hover { filter: brightness(1.06); }
+        .qqs-btn:disabled { opacity: .55; cursor: not-allowed; }
+        .qqs-hint { font-size: 11px; color: var(--qqs-sub); line-height: 1.7; padding-top: 2px; border-top: 1px dashed #eceff5; }
+        .qqs-settings { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #596074; }
+        .qqs-settings-item { display: flex; align-items: center; gap: 8px; }
+        .qqs-settings .qqs-switch { width: 38px; height: 22px; background: #dfe3eb; }
+        .qqs-settings .qqs-switch span { width: 16px; height: 16px; }
+        .qqs-settings .qqs-switch.on { background: #1677ff; }
+        .qqs-settings .qqs-switch.on span { transform: translateX(16px); }
+        @@media (max-width: 720px) { .qqs-form { grid-template-columns: 1fr; } .qqs-hero-side { width: 100%; } }
+    </style>
+
+    <div class="qqs-hero">
+        <div class="qqs-hero-main">
+            <div>
+                <div class="qqs-kicker">Alife · QQ Suite</div>
+                <h2>QQ 全能套件</h2>
+                <p>一个插件、一个入口：@QQSuiteControlModule.Features.Count 个 QQ 功能在这里逐项开关，详细设置也能在卡片里展开。</p>
+            </div>
+            <div class="qqs-hero-side">
+                <div class="qqs-stat">
+                    <b>@Module.EnabledCount/@QQSuiteControlModule.Features.Count</b>
+                    <span>已启用功能</span>
+                </div>
+                <div class="qqs-pill @(Module.IsConnected ? "ok" : "")">
+                    <span class="qqs-dot"></span>@Module.ConnectionStateText
+                </div>
+                <div class="qqs-master">
+                    <QQSuiteButton Kind="switch" Checked="Module.AllEnabled"
+                                   Partial="!Module.AllEnabled && Module.AnyFeatureEnabled"
+                                   Disabled="Module.IsBusy" OnClick="ToggleAll" />
+                    <span>全部开启</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Module.LastMessage))
+    {
+        <div class="qqs-alert @(Module.LastMessageIsError ? "error" : "")">
+            <div class="qqs-alert-text">@Module.LastMessage</div>
+        </div>
+    }
+
+    @if (Module.HasLegacyModules)
+    {
+        <div class="qqs-alert">
+            <div class="qqs-alert-text">
+                检测到旧插件模块仍在启用：<b>@Module.LegacyNamesText</b>。新旧同时开会建立两条 OneBot 连接、同名 AI 函数重复执行（表现为重复回复）。
+                若其它插件还依赖旧版 QQ聊天，可先只保留它，关闭其余旧模块。
+            </div>
+            <QQSuiteButton Disabled="Module.IsBusy" OnClick="DisableLegacy">关闭旧插件模块</QQSuiteButton>
+        </div>
+    }
+
+    <div class="qqs-grid">
+        @foreach (QQSuiteFeature feature in QQSuiteControlModule.Features)
+        {
+            bool enabled = Module.IsEnabled(feature.ModuleType);
+            <div class="qqs-card @(enabled ? "on" : "")" style="--accent: @feature.Accent">
+                <div class="qqs-card-head">
+                    <div class="qqs-badge">@feature.ShortName</div>
+                    <div class="qqs-titlebox">
+                        <div class="qqs-title">@feature.Name</div>
+                        <div class="qqs-meta">@(Module.Configuration?.ShowFunctionCount == true ? $"{feature.FunctionCount} 个 AI 函数" : "独立功能模块")</div>
+                    </div>
+                    <QQSuiteButton Kind="switch" Checked="enabled" Disabled="Module.IsBusy"
+                                   OnClick="() => ToggleFeature(feature, !enabled)" />
+                </div>
+                <p class="qqs-desc">@feature.Description</p>
+                <div class="qqs-tags">
+                    @foreach (string highlight in feature.Highlights)
+                    {
+                        <span>@highlight</span>
+                    }
+                </div>
+                <div class="qqs-card-foot">
+                    <span class="qqs-card-state">
+                        @(enabled ? "已启用" : "未启用") · @(feature.ModuleType == typeof(QChatService) ? "连接底座" : "依赖 QQ聊天")
+                    </span>
+                    <QQSuiteButton Kind="link" OnClick="() => OpenSettings(feature)">@(openSettings == feature.ModuleType ? "收起设置" : "设置")</QQSuiteButton>
+                </div>
+                @if (openSettings == feature.ModuleType && editingConfig != null)
+                {
+                    <div class="qqs-detail">
+                        <AutoFormUI Configuration="editingConfig" ConfigurationChanged="OnConfigEdited" />
+                        <ConfigSaveUI ConfigurableModuleType="feature.ModuleType"
+                                      Configuration="editingConfig"
+                                      OnConfigurationChanged="OnConfigEdited"
+                                      Character="Character" />
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="qqs-conn">
+        <div class="qqs-conn-head">
+            <h3>OneBot 连接</h3>
+            <span>所有功能共用这一条 WebSocket，地址与 Token 只在这里填一次</span>
+        </div>
+        <div class="qqs-form">
+            <div class="qqs-field">
+                <label>WebSocket 地址</label>
+                <QQSuiteInput Value="Url" ValueChanged="value => Url = value" Placeholder="ws://127.0.0.1:3001" />
+            </div>
+            <div class="qqs-field">
+                <label>Token（可选）</label>
+                <QQSuiteInput Value="Token" ValueChanged="value => Token = value" Placeholder="NapCat / SnowLuma 的 access token" />
+            </div>
+            <QQSuiteButton Disabled="Module.IsBusy" OnClick="ApplyConnection">保存并重连</QQSuiteButton>
+        </div>
+        <div class="qqs-settings">
+            <div class="qqs-settings-item">
+                <QQSuiteButton Kind="switch" Checked="Configuration?.ShowFunctionCount == true" OnClick="ToggleShowCount" />
+                <span>显示函数数量</span>
+            </div>
+            <div class="qqs-settings-item">
+                <QQSuiteButton Kind="switch" Checked="Configuration?.ShowHints == true" OnClick="ToggleShowHints" />
+                <span>显示使用提示</span>
+            </div>
+        </div>
+        @if (Configuration?.ShowHints != false)
+        {
+            <div class="qqs-hint">
+                适配 NapCat / SnowLuma / LLOneBot 等 OneBot v11 协议端；QQ 新版与旧版由协议端负责，插件侧功能保持一致。
+                入群审核、踢人、禁言等操作需要协议端账号具备对应权限。每个功能的详细设置，点卡片右下角「设置」即可展开。
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string Url = "";
+    private string Token = "";
+    private QQSuiteControlModule? loadedModule;
+    private Type? openSettings;
+    private object? editingConfig;
+
+    protected override void OnParametersSet()
+    {
+        if (Module != null && !ReferenceEquals(loadedModule, Module))
+        {
+            QChatServiceConfig config = Module.GetConnectionConfig();
+            Url = config.Url;
+            Token = config.Token;
+            loadedModule = Module;
+        }
+    }
+
+    private async Task ToggleAll()
+    {
+        await Module!.SetAllFeaturesAsync(!Module.AllEnabled);
+        StateHasChanged();
+    }
+
+    private async Task ToggleFeature(QQSuiteFeature feature, bool enabled)
+    {
+        await Module!.ToggleFeatureAsync(feature.ModuleType, enabled);
+        StateHasChanged();
+    }
+
+    private async Task ApplyConnection()
+    {
+        await Module!.ApplyConnectionAsync(Url, Token);
+        StateHasChanged();
+    }
+
+    private void ToggleShowCount()
+    {
+        if (Configuration != null)
+        {
+            Configuration.ShowFunctionCount = !Configuration.ShowFunctionCount;
+            Module.SavePreferences();
+        }
+    }
+
+    private void ToggleShowHints()
+    {
+        if (Configuration != null)
+        {
+            Configuration.ShowHints = !Configuration.ShowHints;
+            Module.SavePreferences();
+        }
+    }
+
+    private async Task DisableLegacy()
+    {
+        await Module!.DisableLegacyModulesAsync();
+        StateHasChanged();
+    }
+
+    private void OpenSettings(QQSuiteFeature feature)
+    {
+        if (openSettings == feature.ModuleType)
+        {
+            openSettings = null;
+            editingConfig = null;
+            return;
+        }
+
+        openSettings = feature.ModuleType;
+        editingConfig = Module?.GetFeatureConfiguration(feature.ModuleType);
+    }
+
+    private void OnConfigEdited(object config)
+    {
+        editingConfig = config;
+        if (openSettings != null)
+        {
+            Module?.ApplyFeatureConfiguration(openSettings, config);
+        }
+    }
+}
