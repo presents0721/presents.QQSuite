@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -365,7 +366,7 @@ public class QzoneModule(
         if (s is "0" or "0s" or "0m" or "0h" or "0d") return 0;
         var m = Regex.Match(s, @"^(\d+(?:\.\d+)?)([dhms]?)$");
         if (!m.Success) return 0;
-        var val = double.Parse(m.Groups[1].Value);
+        var val = double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
         var unit = string.IsNullOrEmpty(m.Groups[2].Value) ? defaultUnit : m.Groups[2].Value;
         return unit switch
         {
@@ -1334,7 +1335,10 @@ public class QzoneModule(
         var dedupeInterval = ParseIntervalSeconds(Configuration.AutoPublishImageDedupeInterval, "h");
         if (dedupeInterval <= 0) return false;
         // 身份归一（去查询串/空白/引号）后再比，避免同一张图换签名 URL 后认不出
-        return _state.IsImageRecentlyPublished(QzoneState.NormalizeImageIdentity(url), dedupeInterval);
+        if (_state.IsImageRecentlyPublished(QzoneState.NormalizeImageIdentity(url), dedupeInterval)) return true;
+        // 历史记录优先存内容 md5（同图不同签名也认得出），这里必须同时按 md5 再比一次
+        var md5 = _urlMd5.GetValueOrDefault(url);
+        return !string.IsNullOrEmpty(md5) && _state.IsImageRecentlyPublished(md5, dedupeInterval);
     }
 
     /// <summary>仅发布成功后记录配图指纹（对齐 Kira：去重仅成功后记录）</summary>
@@ -1571,7 +1575,8 @@ public class QzoneModule(
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(Random.Shared.NextDouble() * Configuration.LikeDelayJitter + Configuration.LikeDelayMin));
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(0,
+                Random.Shared.NextDouble() * Configuration.LikeDelayJitter + Configuration.LikeDelayMin)));
             var detailResp = await _api!.GetDetailAsync(post.Uin, post.Tid);
             if (detailResp.Ok)
             {
@@ -1793,6 +1798,18 @@ public class QzoneModule(
                 }
             }
 
+            // 配图去重：跳过近期发布过的图（URL 归一化 / 内容 md5），避免同一张图反复配说说
+            int skippedImages = 0;
+            if (imgList.Count > 0)
+            {
+                int beforeDedupe = imgList.Count;
+                imgList = imgList.Where(u => !IsRecentlyPublishedImage(u)).ToList();
+                skippedImages = beforeDedupe - imgList.Count;
+                if (skippedImages > 0)
+                    logger.LogInformation("[说说] 配图去重：跳过 {Skip} 张最近发布过的图片（去重间隔 {Interval}）",
+                        skippedImages, Configuration.AutoPublishImageDedupeInterval);
+            }
+
             var result = await _api!.PublishAsync(text, imgList, allowImageDrop: imgList.Count > 0, allowLocalPath: IsLocalImagePathAllowed);
             if (result.Ok)
             {
@@ -1800,6 +1817,7 @@ public class QzoneModule(
                 RecordPublishedImages(imgList);
                 _state.Save();
                 var msg = $"发布成功 tid={result.Data.GetValueOrDefault("tid")}";
+                if (skippedImages > 0) msg += $"（{skippedImages} 张配图近期已发过，已跳过）";
                 if (!string.IsNullOrEmpty(result.Message)) msg += $"（{result.Message}）";
                 interactor.Poke(msg);
             }

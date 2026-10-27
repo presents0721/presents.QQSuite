@@ -34,16 +34,16 @@ public class VideoShareConfig
     [Description("同一条消息里出现多个视频链接时，最多处理几个（1-5）")]
     public int MaxLinksPerMessage { get; set; } = 2;
 
-    [DisplayName("视频放进合并转发(不推荐)")]
-    [Description("部分协议端不支持在合并转发节点里解析视频段，会显示成 [CQ:video,...] 纯文本，默认关闭")]
-    public bool IncludeVideoNode { get; set; }
+    [DisplayName("视频放进合并转发")]
+    [Description("等视频下载完，把视频段一起放进同一条聊天记录里，只发一条消息；若协议端不支持视频节点，会显示成 [CQ:video,...] 纯文本，此时可关掉本项改为单独发送")]
+    public bool IncludeVideoNode { get; set; } = true;
 
     [DisplayName("视频单独发送")]
-    [Description("合并转发只放标题与封面，随后把视频下载到本地并以单独视频消息发送（不放进转发）")]
-    public bool SendVideoSeparately { get; set; } = true;
+    [Description("额外把视频下载到本地，以单独一条视频消息发送（与「视频放进合并转发」同时开就是两条消息）")]
+    public bool SendVideoSeparately { get; set; }
 
     [DisplayName("下载完成后再发")]
-    [Description("开启后先等视频下载完，再连续发送合并转发卡片和视频，避免卡片先到、视频隔很久才到；大视频首条消息会等待更久")]
+    [Description("开启后先等视频下载完再连发消息，避免卡片先到、视频隔很久才到；「视频放进合并转发」本身必须等下载完成，本项只影响单独发送的视频")]
     public bool SendAfterDownload { get; set; } = true;
 
     [DisplayName("视频大小上限(MB)")]
@@ -79,7 +79,7 @@ public class VideoShareConfig
     public bool RenderCommentsInImage { get; set; } = true;
 
     [DisplayName("防重复分钟")]
-    [Description("同一会话里同一个视频在该时间内只自动发送一次")]
+    [Description("同一会话里同一个视频在该时间内只自动发送一次（最小 1 分钟，填 0 也按 1 分钟）")]
     public int DedupeMinutes { get; set; } = 10;
 }
 
@@ -221,8 +221,14 @@ public class VideoShareModule(
         Timeout = TimeSpan.FromSeconds(20)
     };
 
-    /// <summary>自动解析去重：会话 + 视频 ID -> 上次发送时间。</summary>
-    readonly ConcurrentDictionary<string, DateTime> recentSent = new();
+    /// <summary>自动解析去重：会话 + 视频 ID -> 上次发送时间。
+    /// static：模块被重复加载、QChat 重连后仍共用同一份去重表，避免同一条视频被两条链路各发一遍。</summary>
+    static readonly ConcurrentDictionary<string, DateTime> recentSent = new();
+
+    /// <summary>已处理过的消息键，防止同一条 OneBot 消息被重复投递时自动解析两次。</summary>
+    static readonly ConcurrentDictionary<string, byte> handledEvents = new();
+
+    static readonly object dedupeGate = new();
 
     OneBotClient? subscribedClient;
 
@@ -269,13 +275,27 @@ public class VideoShareModule(
         {
             VideoInfo info = await ParseAsync(url);
             bool isGroup = await DetectIsGroupAsync(client, targetId, messageType);
-            // 视频下载与图卡渲染并行，减少等待
-            Task<string?> videoTask = PrepareVideoFileAsync(info);
-            Task<string?> cardTask = RenderCardAsync(info);
-            await Task.WhenAll(videoTask, cardTask);
-            List<object> nodes = BuildNodes(info, videoTask.Result, cardTask.Result);
-            await SendForwardAsync(client, isGroup, targetId, nodes);
-            await SendVideoMessageAsync(client, isGroup, targetId, info, videoTask.Result);
+            if (!TryClaimSend(targetId, info, url, out string dedupeKey))
+            {
+                // 自动解析刚发过同一条视频时，AI 再调一次也不该重复刷屏
+                interactor.Poke($"这条视频 {Math.Max(1, Configuration.DedupeMinutes)} 分钟内已经发过了，跳过重复发送");
+                return;
+            }
+            try
+            {
+                // 视频下载与图卡渲染并行，减少等待
+                Task<string?> videoTask = PrepareVideoFileAsync(info);
+                Task<string?> cardTask = RenderCardAsync(info);
+                await Task.WhenAll(videoTask, cardTask);
+                List<object> nodes = BuildNodes(info, videoTask.Result, cardTask.Result);
+                await SendVideoResultAsync(client, isGroup, targetId, info, nodes, cardTask.Result, videoTask.Result);
+            }
+            catch
+            {
+                // 没发出去就释放去重占用，避免一次失败把这条视频锁死一整个窗口
+                ReleaseClaim(dedupeKey);
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -631,27 +651,58 @@ public class VideoShareModule(
             idMatch = Regex.Match(shareText, @"(\d{19})");
         string id = idMatch.Success ? idMatch.Groups[1].Value : "";
 
-        // 解析接口自己支持短链，先交给接口处理
-        try
+        // 解析接口与分享页兜底并行跑，谁先成功用谁；接口 404/超时就不用干等 20 秒
+        Exception? apiError = null;
+        Exception? pageError = null;
+
+        async Task<VideoInfo?> TryApiAsync()
         {
-            return await ParseDouyinByApiAsync(url, id);
+            try
+            {
+                return await ParseDouyinByApiAsync(url, id);
+            }
+            catch (Exception ex)
+            {
+                apiError = ex;
+                logger.LogWarning("抖音解析接口失败，等待分享页兜底：{Message}", ex.Message);
+                return null;
+            }
         }
-        catch (Exception ex)
+
+        async Task<VideoInfo?> TryPageAsync()
         {
-            logger.LogWarning("抖音解析接口失败，尝试分享页兜底：{Message}", ex.Message);
+            try
+            {
+                return await ParseDouyinSharePageAsync(id);
+            }
+            catch (Exception ex)
+            {
+                pageError = ex;
+                logger.LogWarning("抖音分享页兜底失败：{Message}", ex.Message);
+                return null;
+            }
         }
+
+        Task<VideoInfo?> apiTask = TryApiAsync();
+        Task<VideoInfo?> pageTask = id.Length > 0 ? TryPageAsync() : Task.FromResult<VideoInfo?>(null);
 
         if (id.Length == 0)
+        {
+            // 短链没展开出 ID，只能靠接口自己解析短链
+            VideoInfo? fromApi = await apiTask;
+            if (fromApi != null) return fromApi;
             throw new Exception("抖音短链展开失败，没能拿到视频 ID；请稍后重试或配置第三方解析接口");
+        }
 
-        try
-        {
-            return await ParseDouyinSharePageAsync(id);
-        }
-        catch (Exception ex)
-        {
-            throw new Exception("抖音解析失败（官方接口有风控，请检查网络或配置第三方解析接口）：" + ex.Message);
-        }
+        Task<VideoInfo?> finished = await Task.WhenAny(apiTask, pageTask);
+        VideoInfo? first = await finished;
+        if (first != null) return first;
+
+        VideoInfo? second = await (finished == apiTask ? pageTask : apiTask);
+        if (second != null) return second;
+
+        throw new Exception("抖音解析失败（接口与分享页都没成功）：" +
+                            (apiError?.Message ?? pageError?.Message ?? "未知错误"));
     }
 
     async Task<VideoInfo> ParseDouyinByApiAsync(string url, string id)
@@ -899,26 +950,23 @@ public class VideoShareModule(
             if (gallery.Length > 0)
                 nodes.Add(new { type = "node", data = new { name, nickname = name, uin, content = gallery } });
         }
-        else if (Configuration.IncludeVideoNode && !string.IsNullOrWhiteSpace(info.VideoUrl))
+        else if (Configuration.IncludeVideoNode && localVideo != null)
         {
-            // 优先用本地文件，协议端才能直接读取；远端直链常因防盗链被当成纯文本
-            string videoFile = localVideo != null
-                ? "file:///" + localVideo.Replace('\\', '/')
-                : info.VideoUrl;
-            nodes.Add(VideoNode(videoFile));
+            // 只用本地文件：远端直链会因防盗链被协议端当成纯文本；下载失败时宁可不放视频，原链接已在文字节点里
+            nodes.Add(VideoNode("file:///" + localVideo.Replace('\\', '/')));
         }
 
         return nodes;
     }
 
-    async Task SendForwardAsync(OneBotClient client, bool isGroup, long targetId, List<object> nodes)
+    async Task SendForwardAsync(OneBotClient client, bool isGroup, long targetId, List<object> nodes, int timeoutSeconds = 30)
     {
         string action = isGroup ? "send_group_forward_msg" : "send_private_forward_msg";
         object parameters = isGroup
             ? new { group_id = targetId, messages = nodes }
             : new { user_id = targetId, messages = nodes };
 
-        JsonElement raw = await client.CallActionRawAsync(action, parameters, 30);
+        JsonElement raw = await client.CallActionRawAsync(action, parameters, timeoutSeconds);
         string? status = Pick(raw, "status");
         int retCode = (int)PickLong(raw, "retcode");
         if (string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase) || retCode > 1)
@@ -939,10 +987,37 @@ public class VideoShareModule(
         return await DownloadVideoAsync(info);
     }
 
-    /// <summary>单独发送视频消息：先下载到本地，绕开 B站直链的 Referer/防盗链限制。</summary>
-    async Task SendVideoMessageAsync(OneBotClient client, bool isGroup, long targetId, VideoInfo info, string? localFile = null)
+    /// <summary>发送聊天记录：优先把视频放进同一条转发；协议端不认视频节点时退回「卡片 + 单独视频」，不至于什么都发不出去。</summary>
+    async Task SendVideoResultAsync(OneBotClient client, bool isGroup, long targetId, VideoInfo info, List<object> nodes, string? cardImage, string? localVideo)
     {
-        if (!Configuration.SendVideoSeparately) return;
+        // 带视频的转发要上传文件，30 秒不够，给 180 秒
+        int timeout = localVideo != null ? 180 : 30;
+        try
+        {
+            await SendForwardAsync(client, isGroup, targetId, nodes, timeout);
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (localVideo == null) throw;
+            logger.LogWarning("带视频的聊天记录发送失败，退回「卡片 + 单独视频」：{Message}", ex.Message);
+        }
+
+        await SendForwardAsync(client, isGroup, targetId, BuildNodes(info, null, cardImage));
+        try
+        {
+            await SendVideoMessageAsync(client, isGroup, targetId, info, localVideo, force: true);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("视频单独发送也失败，已保留聊天记录卡片（协议端可能不支持视频文件）：{Message}", ex.Message);
+        }
+    }
+
+    /// <summary>单独发送视频消息：先下载到本地，绕开 B站直链的 Referer/防盗链限制。</summary>
+    async Task SendVideoMessageAsync(OneBotClient client, bool isGroup, long targetId, VideoInfo info, string? localFile = null, bool force = false)
+    {
+        if (!Configuration.SendVideoSeparately && !force) return;
         if (info.IsGallery || string.IsNullOrWhiteSpace(info.VideoUrl)) return;
 
         string? file = localFile ?? await DownloadVideoAsync(info);
@@ -1098,6 +1173,7 @@ public class VideoShareModule(
         {
             if (Configuration?.AutoParseLinks != true) return;
             if (botEvent is not OneBotMessageEvent message) return;
+            if (!TryAcceptEvent(message)) return;
 
             long botId = qChatService.BotId;
             if (botId != 0 && message.UserId == botId) return;
@@ -1129,6 +1205,57 @@ public class VideoShareModule(
         }
     }
 
+    /// <summary>同一条消息只自动解析一次：优先用 message_id 作键，拿不到就退回时间 + 发送者 + 原文。</summary>
+    bool TryAcceptEvent(OneBotMessageEvent message)
+    {
+        long messageId = 0;
+        if (!string.IsNullOrEmpty(message.RawJson))
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(message.RawJson!);
+                if (doc.RootElement.TryGetProperty("message_id", out JsonElement id) &&
+                    id.ValueKind == JsonValueKind.Number && id.TryGetInt64(out long value))
+                    messageId = value;
+            }
+            catch
+            {
+                // RawJson 不是合法 JSON 时退回内容指纹
+            }
+        }
+
+        string key = messageId != 0
+            ? $"m{message.SelfId}:{messageId.ToString(CultureInfo.InvariantCulture)}"
+            : $"t{message.SelfId}|{message.Time}|{message.GroupId}|{message.UserId}|{message.RawMessage}";
+        if (!handledEvents.TryAdd(key, 0)) return false;
+        if (handledEvents.Count > 2048) handledEvents.Clear();
+        return true;
+    }
+
+    /// <summary>原子去重：同一会话 + 同一视频在 DedupeMinutes 内只发一次，返回 false 表示刚发过。</summary>
+    bool TryClaimSend(long targetId, VideoInfo info, string link, out string key)
+    {
+        key = $"{targetId}:{(info.Id.Length > 0 ? info.Id : link)}";
+        DateTime now = DateTime.UtcNow;
+        int minutes = Math.Max(1, Configuration.DedupeMinutes);
+        lock (dedupeGate)
+        {
+            if (recentSent.TryGetValue(key, out DateTime last) && (now - last).TotalMinutes < minutes)
+                return false;
+            recentSent[key] = now;
+            return true;
+        }
+    }
+
+    /// <summary>发送失败时释放去重占用，让用户重试时不会被窗口锁死。</summary>
+    void ReleaseClaim(string key)
+    {
+        lock (dedupeGate)
+        {
+            recentSent.TryRemove(key, out _);
+        }
+    }
+
     async Task AutoSendAsync(OneBotClient client, long groupId, long peerId, List<string> links)
     {
         bool isGroup = groupId != 0;
@@ -1138,27 +1265,31 @@ public class VideoShareModule(
 
         foreach (string link in links)
         {
+            string? dedupeKey = null;
             try
             {
                 VideoInfo info = await ParseAsync(link);
-                string key = $"{targetId}:{(info.Id.Length > 0 ? info.Id : link)}";
-                DateTime now = DateTime.UtcNow;
-                if (recentSent.TryGetValue(key, out DateTime last) &&
-                    (now - last).TotalMinutes < Math.Max(1, Configuration.DedupeMinutes))
+                if (!TryClaimSend(targetId, info, link, out string key))
+                {
+                    logger.LogInformation("跳过重复视频 {Key}：{Minutes} 分钟内已向该会话发过", key, Math.Max(1, Configuration.DedupeMinutes));
                     continue;
-                recentSent[key] = now;
+                }
+                dedupeKey = key;
 
                 // 视频下载与图卡渲染并行；选了“下载完成后再发”时等两者都完成，再连续发卡片和视频
                 Task<string?> videoTask = PrepareVideoFileAsync(info);
                 Task<string?> cardTask = RenderCardAsync(info);
                 await Task.WhenAll(videoTask, cardTask);
-                await SendForwardAsync(client, isGroup, targetId, BuildNodes(info, videoTask.Result, cardTask.Result));
+                List<object> nodes = BuildNodes(info, videoTask.Result, cardTask.Result);
+                await SendVideoResultAsync(client, isGroup, targetId, info, nodes, cardTask.Result, videoTask.Result);
+                logger.LogInformation("视频已发送 {Key}：节点 {Nodes} 个，视频{State}", dedupeKey, nodes.Count, videoTask.Result == null ? "未附带" : "已附带");
                 succeeded++;
-                await SendVideoMessageAsync(client, isGroup, targetId, info, videoTask.Result);
                 await Task.Delay(800);
             }
             catch (Exception ex)
             {
+                // 没发出去就释放去重占用，避免一次失败把这条视频锁死一整个窗口
+                if (dedupeKey != null) ReleaseClaim(dedupeKey);
                 lastError = ex.Message;
                 logger.LogWarning("自动解析视频失败 {Link}：{Type}：{Message}", link, ex.GetType().Name, ex.Message);
             }

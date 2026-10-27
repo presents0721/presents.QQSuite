@@ -733,6 +733,39 @@ public class QQEnhanceModule(
         return botId != 0 && userId == botId;
     }
 
+    /// <summary>戳一戳防刷：同一人同一会话在滑动窗口内超过限次则静默忽略，返回 true 表示本次应丢弃。</summary>
+    bool PokeFloodExceeded(long userId, long groupId)
+    {
+        int limitCount = Configuration.PokeBackFloodLimitCount;
+        int limitWin = Configuration.PokeBackFloodWindowSeconds;
+        if (limitCount <= 0 || limitWin <= 0) return false;
+
+        DateTime now = DateTime.Now;
+        lock (_pokeLock)
+        {
+            var key = (userId, groupId);
+            // 顺手清掉长期无活动的会话，避免字典随群/人无限增长
+            if (_pokeFlood.Count > 256)
+            {
+                List<(long UserId, long GroupId)> stale = _pokeFlood
+                    .Where(p => p.Key != key && (p.Value.Count == 0 || (now - p.Value[^1]).TotalSeconds > limitWin))
+                    .Select(p => p.Key)
+                    .ToList();
+                foreach (var k in stale) _pokeFlood.Remove(k);
+            }
+
+            if (!_pokeFlood.TryGetValue(key, out List<DateTime>? list))
+            {
+                list = new List<DateTime>();
+                _pokeFlood[key] = list;
+            }
+            list.RemoveAll(t => (now - t).TotalSeconds > limitWin);
+            if (list.Count >= limitCount) return true;
+            list.Add(now);
+            return false;
+        }
+    }
+
     /// <summary>记录一次插件主动发出的戳一戳（仅在动作成功后调用——失败也记会过度抑制对方真实的戳）</summary>
     private void MarkOutgoingPoke(long userId)
     {
@@ -3924,28 +3957,7 @@ public class QQEnhanceModule(
                 }
 
                 // 第三层：防刷限次（滑动窗口，超限静默——AI无感知）——防双AI互戳等双方逻辑都正确的回圈
-                int limitCount = Configuration.PokeBackFloodLimitCount;
-                int limitWin = Configuration.PokeBackFloodWindowSeconds;
-                if (limitCount > 0 && limitWin > 0)
-                {
-                    lock (_pokeLock)
-                    {
-                        var key = (noticeEvent.UserId, noticeEvent.GroupId);
-                        if (!_pokeFlood.TryGetValue(key, out var list))
-                        {
-                            list = new List<DateTime>();
-                            _pokeFlood[key] = list;
-                        }
-                        list.RemoveAll(t => (DateTime.Now - t).TotalSeconds > limitWin);
-                        if (list.Count >= limitCount)
-                        {
-                            logger.LogDebug("戳一戳防刷触发：user_id={User} 在 {Win}s 内已达 {Count} 次，本次静默忽略",
-                                noticeEvent.UserId, limitWin, limitCount);
-                            return;
-                        }
-                        list.Add(DateTime.Now);
-                    }
-                }
+                if (PokeFloodExceeded(noticeEvent.UserId, noticeEvent.GroupId)) return;
 
                 bool isGroup = noticeEvent.GroupId != 0;
                 // 私聊的会话对象就是对端（user_id），群聊是群号——按会话存档，避免多会话互相覆盖导致回戳错人
