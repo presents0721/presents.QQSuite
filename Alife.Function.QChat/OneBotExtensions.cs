@@ -59,7 +59,12 @@ public static class OneBotExtensions
     /// </summary>
     public static async Task<List<OneBotMessageEvent>?> GetGroupMsgHistory(this OneBotClient client, long groupId, long? messageSeq = null, int count = 20)
     {
-        OneBotGroupHistoryData? data = await client.CallActionAsync<OneBotGroupHistoryData>("get_group_msg_history", new { group_id = groupId, message_seq = messageSeq, count });
+        // message_seq 传 null 会被 NapCat 判成 schema 错误（retcode 1400 Schema compilation error: Expected string），
+        // 想从最新一条开始拉就必须整个键都不出现；给了值时按数字传即可
+        object parameters = messageSeq is null
+            ? new { group_id = groupId, count }
+            : new { group_id = groupId, message_seq = messageSeq.Value, count };
+        OneBotGroupHistoryData? data = await client.CallActionAsync<OneBotGroupHistoryData>("get_group_msg_history", parameters);
         return data?.Messages;
     }
 }

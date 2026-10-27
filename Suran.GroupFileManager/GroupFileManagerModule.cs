@@ -1415,9 +1415,21 @@ public class GroupFileManagerModule(
         catch (Exception downloadError)
         {
             record.Status = "failed";
-            record.ErrorMessage = downloadError.Message;
+            record.ErrorMessage = ExplainDownloadFailure(downloadError.Message);
             logger.LogError("下载异常：{Message}", downloadError.Message);
         }
+    }
+
+    /// <summary>下载失败多数是环境问题，原文照抄给用户等于没提示，这里补一句能动手的说明。</summary>
+    static string ExplainDownloadFailure(string message)
+    {
+        // 取群文件直链走 NapCat 的 packetBackend，它的 offset 表按 QQ 版本硬编码，
+        // 本机 QQ 比 NapCat 支持的更新时会整体报「不支持当前QQ版本架构」，与 Bot 是否为管理员无关
+        if (message.Contains("packetBackend", StringComparison.OrdinalIgnoreCase))
+        {
+            return message + "（NapCat 的 packetBackend 未适配本机 QQ 版本，升级 NapCat 或换用其支持的 QQ 版本即可，与 Bot 是否为管理员无关）";
+        }
+        return ExplainFileIdFailure(message);
     }
 
     // 下载前校验扩展名白名单与大小限制，返回拒绝原因（空串=允许）
