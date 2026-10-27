@@ -18,7 +18,7 @@
 
 ## 版本
 
-当前版本 **5.1.0**，发布包见 [Releases](https://github.com/presents0721/presents.QQSuite/releases)。
+当前版本 **5.1.1**，发布包见 [Releases](https://github.com/presents0721/presents.QQSuite/releases)。
 
 插件大版本与 Alife 大版本对应：5.x 只给 Alife 5.0.0+ 用，4.x 请勿安装或更新到 5.x（两条线功能一致，底层接口按版本适配）。
 
