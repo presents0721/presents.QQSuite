@@ -1,8 +1,8 @@
 {
   "Id": "presents.QQSuite",
   "Name": "QQ 全能套件",
-  "Version": "5.1.1",
-  "Description": "把 QQ聊天、QQ群聊管家、QQ群文件管家、QQ工具箱、QQ增强、QQ空间、QQ分享卡片与群聊日报整合进一个插件，全部功能复用同一条 OneBot v11 连接；在「功能检视 → QQ 全能套件」里可逐个开关并一键全开，兼容 NapCat、SnowLuma、LLOneBot 与新旧版 QQ。",
+  "Version": "5.2.0",
+  "Description": "把 QQ聊天、QQ单向发送、QQ群聊管家、QQ群文件管家、QQ工具箱、QQ增强、QQ空间、QQ分享卡片、视频解析、Pixiv 图片、JM 漫画、表情包、跨群转发与群聊日报整合进一个插件，全部功能复用同一条 OneBot v11 连接；在「功能检视 → QQ 全能套件」里可逐个开关并一键全开，兼容 NapCat、SnowLuma、LLOneBot 与新旧版 QQ。",
   "Dependencies": {
     "Alife.Function.FunctionCaller": "",
     "Alife.Function.Speech": "",

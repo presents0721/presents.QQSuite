@@ -903,7 +903,7 @@ public class MemePackModule(
 
         List<MemeEntry> entries = MemeStore.Load();
         interactor.Prompt($$"""
-            你有一个「表情包库存」，可以在聊天中按情绪自主发图，比打字更自然。
+            你有一个「表情包库存」，聊天中按情绪自主发图比打字更自然。
 
             ## 提供函数
             {{handler.FunctionDocument()}}
@@ -912,12 +912,8 @@ public class MemePackModule(
             {{BuildInjectedList(entries)}}
 
             ## 使用提示
-            - 库存为空时，先用 MemeImportQQ 把 QQ 收藏的表情导进来，这是最快攒库存的方式
-            - 看到群里/私聊里有意思的图片，可以主动用 MemeCollect 收藏，来源可以直接传消息里的图片网址或本地路径
-            - 想表达某种情绪时，用 MemeSend 传 query（例如「无语」「猫猫震惊」）让它按含义挑一个发出去，不必先查 ID
-            - 拿不准库存里有什么就用 MemeList 查；库存里没有合适的就干脆不发，不要硬凑
-            - 标签写的是「含义/情绪/场合」：含义=这张图相当于在说哪句话，场合=适合在什么聊天氛围里丢出去；挑图就看这两段
-            - 看到「未标注」的条目说明当时打标没成功，可以用 MemeDescribe 补标；收藏时也可以传 remark 补一句你自己的理解
+            - 库存为空先用 MemeImportQQ 导入 QQ 收藏；想表达情绪用 MemeSend 传 query（如「无语」），不必先查 ID
+            - 看到好图用 MemeCollect 收藏，未标注的用 MemeDescribe 补；没有合适的就不发，别硬凑
             """);
         return Task.CompletedTask;
     }

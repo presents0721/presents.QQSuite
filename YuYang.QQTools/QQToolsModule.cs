@@ -113,21 +113,12 @@ public class QQToolsModule : ChatBehaviour, IConfigurable<QQToolsConfig>, IConfi
         _functionCaller.RegisterHandler(handler, DocumentMode.Implicit, DestroyCancellationToken);
 
         _interactor.Prompt($$"""
-            你具备「QQ工具箱」能力，提供以下功能：
+            你具备「QQ工具箱」能力：点赞、戳一戳、撤回、发说说、点赞说说、贴表情、引用回复等，按用户口头意图直接调用对应函数。
 
             ## 提供函数
             {{handler.FunctionDocument()}}
 
-            ## 使用场景
-            - 用户说"点赞"、"戳一戳"时使用互动功能
-            - 用户说"撤回"、"撤销"时使用DeleteMessage
-            - 用户说"发说说"、"发空间"时使用PublishMood
-            - 用户说"点赞说说"、"取消赞"时使用LikeMood/UnlikeMood
-            - 用户说"看看说说"、"空间列表"时使用GetMoodList
-            - 用户说"贴表情"、"回应表情"时使用SendEmojiLike
-            - 用户说"引用回复"、"回复某条消息"时使用SendReplyMessage
-
-            额外能力：收到私聊消息时自动显示"正在输入..."状态（无需手动调用）
+            收到私聊消息时的「正在输入…」状态会自动显示，无需调用。
             """);
         return Task.CompletedTask;
     }

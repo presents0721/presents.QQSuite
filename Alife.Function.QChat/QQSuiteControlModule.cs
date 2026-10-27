@@ -35,7 +35,7 @@ public sealed record QQSuiteFeature(
 /// </summary>
 [Module("QQ 全能套件",
     """
-    一站式 QQ 功能集合：消息收发、群聊管家、群文件、QQ 工具箱、QQ 增强、QQ 空间、分享卡片、视频解析、Pixiv 图片、JM 漫画与群聊日报。
+    一站式 QQ 功能集合：消息收发、单向发送、群聊管家、群文件、QQ 工具箱、QQ 增强、QQ 空间、分享卡片、视频解析、Pixiv 图片、JM 漫画、表情包、跨群转发与群聊日报。
     统一复用 QQ聊天 的一条 OneBot 连接，适配 NapCat / SnowLuma / LLOneBot 等 OneBot v11 协议端。
     在面板里逐项开关功能，每个功能的详细设置也可以在面板里展开。
     """,
@@ -102,7 +102,11 @@ public class QQSuiteControlModule(
         new(typeof(QQSuite.QQForward.ForwardModule), "QQ跨群转发", "转发",
             "把来源群里有意思的消息多选转发到目标群，可组合成聊天记录或逐条发送，并支持定时巡逻、按兴趣自主分享。",
             ["多选合并转发", "逐条/单条转发", "来源·目标双白名单", "每日限额", "自主巡逻分享"],
-            "#237804", 3)
+            "#237804", 3),
+        new(typeof(QQSuite.ChatSender.QChatSenderModule), "QQ单向发送", "单向",
+            "等价旧版 QQ单向发送：复用 QQ聊天 的连接，只把文本、文件、图片单向发到指定 QQ，不监听任何外部事件。",
+            ["复用现有连接", "文本/文件/图片", "CQ 码支持", "表情库匹配"],
+            "#c41d7f", 3)
     ];
 
     public string LastMessage { get; private set; } = "";
@@ -114,10 +118,11 @@ public class QQSuiteControlModule(
 
     private DateTime lastReconcileTime = DateTime.MinValue;
 
-    /// <summary>旧版 8 个独立插件注册的模块全名：同时启用会双连接、同名函数重复执行。</summary>
+    /// <summary>旧版独立插件注册的模块全名：同时启用会双连接、同名函数重复执行。</summary>
     public static readonly IReadOnlyList<string> LegacyModuleIds =
     [
         "Alife.Function.QChat.QChatService",
+        "Alife.Function.QChatSender.QChatSenderService",
         "Suran.GroupManager.GroupManagerModule",
         "Suran.GroupFileManager.GroupFileManagerModule",
         "YuYang.QQTools.QQToolsModule",
@@ -137,6 +142,7 @@ public class QQSuiteControlModule(
     static string LegacyDisplayName(string id) => id switch
     {
         "Alife.Function.QChat.QChatService" => "QQ聊天",
+        "Alife.Function.QChatSender.QChatSenderService" => "QQ单向发送",
         "Suran.GroupManager.GroupManagerModule" => "QQ群聊管家",
         "Suran.GroupFileManager.GroupFileManagerModule" => "QQ群文件管家",
         "YuYang.QQTools.QQToolsModule" => "QQ工具箱",

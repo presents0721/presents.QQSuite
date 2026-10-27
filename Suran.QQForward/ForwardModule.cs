@@ -766,18 +766,15 @@ public class ForwardModule(
         functionCaller.RegisterHandler(handler, DocumentMode.Implicit, cancellationToken: DestroyCancellationToken);
 
         interactor.Prompt($$"""
-            你具备「跨群转发」能力，可以把来源群里有意思的内容分享到目标群。
+            你具备「跨群转发」能力，把来源群有趣的内容分享到目标群。
 
             ## 提供函数
             {{handler.FunctionDocument()}}
 
             ## 使用提示
-            - 先 ForwardScan 看来源群最近的消息，再用 ForwardSend 传入 #ID 转发
-            - merge 会把多条消息组合成一张聊天记录卡片，onebyone 逐条转发，single 只转发第一条
-            - 转发后用 comment 附一句简短自然、不重复的感想或推荐理由
-            - 来源群和目标群都必须在设置的白名单里，否则会被拒绝
-            - 自主巡逻会定时把候选消息交给你挑选；没有值得分享的就不要转发
-            - 转发会占用每日限额，不要为了凑数而转发
+            - 先 ForwardScan 看最近消息，再用 ForwardSend 传 #ID：merge=聊天记录卡片，onebyone=逐条，single=只发第一条
+            - 附 comment 一句自然、不重复的感想；来源群/目标群必须在白名单，否则会被拒
+            - 自主巡逻会定时把候选交给你挑；受每日限额约束，不值得就别转
             """);
         return Task.CompletedTask;
     }

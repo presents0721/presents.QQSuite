@@ -1405,21 +1405,15 @@ public class JmShareModule(
         functionCaller.RegisterHandler(handler, DocumentMode.Implicit, cancellationToken: DestroyCancellationToken);
 
         interactor.Prompt($$"""
-            你具备「JM漫画」能力，可以搜索 JM 漫画、查看详情、打包下载，并管理账号、收藏与订阅。
+            你具备「JM漫画」能力：搜索、详情、下载打包（ZIP/长图/PDF）、账号、收藏与订阅。
 
             ## 提供函数
             {{handler.FunctionDocument()}}
 
             ## 使用提示
-            - JmSearch 返回搜索结果文字；给了 targetId 时会把结果渲染成图片卡片并以合并转发发送
-            - JmInfo 输出标题、作者、标签、页数、日期与统计数据；给了 targetId 时会发送详情图片卡片
-            - JmDownload 的 chapter 留空表示整本，也可以填章节序号（从 1 开始）、章节 ID 或章节名的一部分；
-              输出格式由设置里的「输出格式」决定（zip / longimage / pdf），设置了「压缩包密码」时 ZIP 会加密
-            - 下载会扣减每日配额（每群 / 每人各一份，可分别设置上限，0 表示不限）
-            - JmAccount 用设置里的「JM 账号 / JM 密码」登录；登录后 JmFavorite 加收藏会尽力同步到账号收藏夹
-            - JmFavorite 的收藏始终先保存在本机；JmSubscribe 会在发现新章节时自动提醒，可选自动下载
-            - 群聊必须先把群号写进「允许群号」配置，私聊必须开启「允许私聊」
-            - 敏感题材需要在设置里填写「AVS 登录态」；渲染图片与导出 PDF 需要系统安装 Edge 或 Chrome，缺失时会自动降级
+            - targetId 留空就是发给当前对话，不要反问主人要群号
+            - JmDownload 的 chapter 留空=整本，也可填序号、章节 ID 或章节名；格式/密码跟设置走，每群每人各扣每日配额
+            - 群聊需在「允许群号」内、私聊需开启「允许私聊」；敏感题材需 AVS 登录态；渲染依赖 Edge/Chrome，缺失会自动降级
             """);
         return Task.CompletedTask;
     }
