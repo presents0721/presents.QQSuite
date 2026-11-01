@@ -727,8 +727,9 @@ public class QzoneModule(
             if (!string.IsNullOrEmpty(systemPrompt))
                 thread.ChatHistory.AddSystemMessage(systemPrompt);
             thread.ChatHistory.AddUserMessage(prompt);
-            var response = await ChatBot.LanguageModel.ChatStreamingAsync(thread);
-            var text = response?.Trim() ?? "";
+            ChatResult response = await ChatBot.LanguageModel.ChatStreamingAsync(thread);
+            if (response.Exception != null) throw response.Exception;
+            string text = (response.AIMessage ?? "").Trim();
             if (string.IsNullOrEmpty(text))
                 logger.LogWarning("LLM 返回为空（本轮内容未生成，任务可能空转）");
             return text;

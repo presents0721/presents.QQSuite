@@ -114,8 +114,8 @@ public class QQEnhanceConfig
     public bool InteractionHintEnabled { get; set; } = true;
 
     [DisplayName("互动提示概率(%)")]
-    [Description("每条QQ消息附加互动提示的概率，0-100，默认100（每次都提示）")]
-    public int InteractionHintProbability { get; set; } = 100;
+    [Description("每条QQ消息附加互动提示的概率，0-100，默认0（不注入）。提示文案保留在下一项，需要时把这里调大即可")]
+    public int InteractionHintProbability { get; set; } = 0;
 
     [DisplayName("互动提示文本")]
     [Description("附加在消息末尾的提示内容，可自定义。支持占位符：{scope}=群号或对方QQ、{type}=group或private、{uin}=发言人QQ、{nick}=发言人昵称、{poke}=戳一戳函数名（自动区分群聊/私聊）、{pokeargs}=戳一戳参数（自动区分群聊/私聊）")]

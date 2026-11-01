@@ -40,6 +40,13 @@ public static class OneBotExtensions
         return await client.CallActionAsync<OneBotFile>("get_group_file_url", new { group_id = groupId, file_id = fileId });
     }
     /// <summary>
+    /// 获取语音文件。NapCat 支持 out_format（mp3/amr/wav/flac 等），会顺带把 silk 转码好并回传 base64。
+    /// </summary>
+    public static async Task<OneBotFile?> GetRecord(this OneBotClient client, string file, string outFormat = "wav")
+    {
+        return await client.CallActionAsync<OneBotFile>("get_record", new { file, out_format = outFormat });
+    }
+    /// <summary>
     /// 根据消息 ID 获取消息详情。
     /// </summary>
     public static async Task<OneBotMessageEvent?> GetMessage(this OneBotClient client, long messageId)

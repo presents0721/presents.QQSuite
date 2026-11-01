@@ -55,9 +55,18 @@ public class GroupMessageSource(long id, QChatServiceConfig config) : MessageSou
             stringBuilder.AppendLine(message);
         MessageBuffer.Clear();
 
-        stringBuilder.AppendLine(config.AppendGroupChatPrompt);
+        if (ShouldAppendChatPrompt(config.GroupChatPromptProbability))
+            stringBuilder.AppendLine(config.AppendGroupChatPrompt);
 
         return stringBuilder.ToString();
+    }
+
+    /// <summary>概率注入：0=从不，100=每次；其余按百分比分概率。文案始终保留在配置里，关掉只是不注入。</summary>
+    static bool ShouldAppendChatPrompt(int probability)
+    {
+        if (probability <= 0) return false;
+        if (probability >= 100) return true;
+        return Random.Shared.Next(100) < probability;
     }
 }
 
@@ -171,7 +180,7 @@ public class QChatService(
     #region AI函数调用
 
     [XmlFunction(FunctionMode.Content)]
-    [Description("将文本以QQ消息输出（注意！群聊环境对话需用“[CQ:at,qq=发送者ID]”来显式回复）")]
+    [Description("将文本以QQ消息输出。回复别人直接说话即可，不要用[CQ:at]——@会打扰人；需要引用对方时用 ReplyRecent")]
     public async Task QChat(XmlExecutorContext ctx, OneBotMessageType type, long targetId,
         [Description("将文本转为语音发送")] bool voice = false)
     {
@@ -339,7 +348,7 @@ public class QChatService(
         foreach (OneBotMessageEvent msg in messages)
         {
             string speaker = msg.GetSpeakerTag();
-            string content = await msg.GetReadableMessage(oneBotClient);
+            string content = await msg.GetReadableMessage(oneBotClient, Configuration);
             DateTime time = DateTimeOffset.FromUnixTimeSeconds(msg.Time).LocalDateTime;
             sb.AppendLine($"[{time:HH:mm:ss}] {speaker}:{content}");
         }
@@ -431,7 +440,8 @@ public class QChatService(
                             {{Configuration.AppendDocumentPrompt}}
 
                             ## 用法提醒
-                            - 支持 CQ 码：[CQ:image,file=1.jpg]、[CQ:record,file=1.mp3]、[CQ:at,qq=10001000]；示例 `<qchat>[CQ:at,qq=10001000] 你好</qchat>`
+                            - 支持 CQ 码：[CQ:image,file=1.jpg]、[CQ:record,file=1.mp3]；示例 `<qchat>你好</qchat>`
+                            - 不要用 [CQ:at] 去 @ 人（@会打扰人）；需要引用某条消息时用 ReplyRecent
                             - QImage 可直接传表情库名称/分类名，多用它增加趣味；表情库在 {{emoteBase}}（根目录=独立表情，子文件夹=分类）
                             - 可用表情：{{emoteInfo}}
                             """);
@@ -547,7 +557,7 @@ public class QChatService(
 
             if (basicMessageEvent is OneBotMessageEvent messageEvent)
             {
-                string content = await messageEvent.GetReadableMessage(oneBotClient);
+                string content = await messageEvent.GetReadableMessage(oneBotClient, Configuration);
                 if (Configuration.ExpandForwardMessages && content.Contains("[转发消息:"))
                     content = await OneBotSegment.ExpandForwardAsync(content, oneBotClient);
                 // 唤醒条件：被 @、主人发言、或命中唤醒词。主人不需要 @ 就该有反应，

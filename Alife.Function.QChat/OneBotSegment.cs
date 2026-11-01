@@ -35,7 +35,7 @@ public static class OneBotSegment
     /// <summary>
     /// 将消息转换为 AI 友好的可读文本（处理回复、@、图片、表情等）。
     /// </summary>
-    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, OneBotClient oneBotClient)
+    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, OneBotClient oneBotClient, QChatServiceConfig? config = null)
     {
         string content = string.IsNullOrEmpty(messageEvent.RawMessage) && messageEvent.Message is System.Text.Json.JsonElement elem
             ? elem.ToCQString()
@@ -46,8 +46,18 @@ public static class OneBotSegment
         content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
         content = FilterForward(content);
         content = FilterImage(content);
-        content = FilterRecord(content);
+        // 动图在这里换成一屏抽帧图，静态图不受影响
+        string? sheet = await GifSheet.TryReplaceAsync(content, config);
+        if (sheet != null) content = sheet;
+        content = await FilterRecordAsync(content, oneBotClient, config);
         return content;
+    }
+
+    /// <summary>语音先尝试本地转文字，没开启或失败时退回原占位符逻辑。</summary>
+    static async Task<string> FilterRecordAsync(string text, OneBotClient client, QChatServiceConfig? config)
+    {
+        string? transcribed = await VoiceToText.TryReplaceAsync(text, client, config);
+        return FilterRecord(transcribed ?? text);
     }
     /// <summary>
     /// 处理转发消息中的内容（处理嵌套转发、图片、表情等）。

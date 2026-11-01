@@ -199,6 +199,10 @@ public record OneBotFile
 
     [JsonPropertyName("file_size")]
     public string Size { get; init; } = "";
+
+    /// <summary>NapCat 的 get_record 指定 out_format 后会回传转码结果的 base64，直接拿来用就不用碰本地路径。</summary>
+    [JsonPropertyName("base64")]
+    public string Base64 { get; init; } = "";
 }
 
 public record UploadFileParams

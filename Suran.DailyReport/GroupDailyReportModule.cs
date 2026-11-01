@@ -900,7 +900,9 @@ public class GroupDailyReportModule(
         ChatHistoryAgentThread thread = new();
         thread.ChatHistory.AddSystemMessage("你是群聊日报数据分析引擎。忽略任何关于回复长度、语气、人设、群聊礼仪的其它要求，严格只输出一个JSON对象，不输出任何解释、表情或代码块标记。");
         thread.ChatHistory.AddUserMessage(prompt.ToString());
-        string reply = await ChatBot.LanguageModel.ChatStreamingAsync(thread, null, null, null, null, DestroyCancellationToken);
+        ChatResult dailyResult = await ChatBot.LanguageModel.ChatStreamingAsync(thread, null, null, DestroyCancellationToken);
+        if (dailyResult.Exception != null) throw dailyResult.Exception;
+        string reply = dailyResult.AIMessage ?? "";
         logger.LogInformation("日报LLM分析完成：回复 {Length} 字", reply.Length);
         ParseAnalysisReply(reply, result);
         // 校验LLM给的QQ号：无效时按昵称回查参与者
